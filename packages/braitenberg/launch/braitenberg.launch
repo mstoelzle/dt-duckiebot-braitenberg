@@ -1,6 +1,6 @@
 <launch>
     <arg name="vehicle_name" default="maxicar" doc="name of the duckiebot"/>
-    <arg name="mode" default="color" doc="mode of braitenberg behaviour: either 'color' or 'brightness'"/>
+    <arg name="mode" default="avoiding" doc="mode of braitenberg behaviour: either 'color' or 'brightness'"/>
     <param name="vehicle_name" type="str" value="$(arg vehicle_name)" />
     <param name="mode" type="str" value="$(arg mode)" />
     <group ns="$(arg vehicle_name)">

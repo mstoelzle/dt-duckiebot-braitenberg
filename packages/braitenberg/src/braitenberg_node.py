@@ -58,9 +58,10 @@ class BraitenbergNode(DTROS):
         self.veh_name = rospy.get_namespace().strip("/")
 
         # mode of braitenberg, options are:
-        # "color": attracted by green, repelled by red
-        # "brightness": attracted by brightness
-        self.mode = rospy.get_param("/robot_name")
+        # "avoiding": avoiding brightness
+        # "attracting": attracted by brightness
+        # "combined": attracted by green, repelled by red
+        self.mode = rospy.get_param("/mode")
 
         # Use the kinematics calibration for the gain and trim
         self.parameters['~gain'] = None
@@ -136,15 +137,15 @@ class BraitenbergNode(DTROS):
         w = raw_img.shape[1]
         print(avg_spectral_intensity/h/w)
 
-        if self.mode == 'brightness':
+        if self.mode == 'attracting' or self.mode == 'avoiding':
             gray_img = cv2.cvtColor(raw_img, cv2.COLOR_BGR2GRAY)
             left_img = self.get_img_sector(gray_img, 'left')
             middle_img = self.get_img_sector(gray_img, 'middle')
             right_img = self.get_img_sector(gray_img, 'right')
-            observation_left = left_img.sum()
-            observation_middle = middle_img.sum()
-            observation_right = right_img.sum()
-        elif self.mode == 'color':
+            observation_left = float(left_img.sum())
+            observation_middle = float(middle_img.sum())
+            observation_right = float(right_img.sum())
+        elif self.mode == 'combined':
             left_img = self.get_img_sector(raw_img, 'left')
             middle_img = self.get_img_sector(raw_img, 'middle')
             right_img = self.get_img_sector(raw_img, 'right')
