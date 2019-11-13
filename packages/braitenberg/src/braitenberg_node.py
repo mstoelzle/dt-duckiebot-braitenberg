@@ -76,13 +76,15 @@ class BraitenbergNode(DTROS):
         self.updateParameters()
 
         # control gains
-        self.kp_delta = 1
-        self.kp_middle = 1
+        self.kp_delta = 0.5
+        self.kp_middle = 8
 
         # Wait for the automatic gain control
         # of the camera to settle, before we stop it
         rospy.sleep(2.0)
         rospy.set_param('/'+self.veh_name+'/camera_node/exposure_mode', 'off')
+
+        self.bridge = CvBridge()
 
         # subscribe to camera stream
         # construct image subscriber
@@ -90,11 +92,14 @@ class BraitenbergNode(DTROS):
         self.sub_image = rospy.Subscriber(self.sub_image_topic, CompressedImage, self.callback_image)
 
         # publisher for wheels command message (WheelsCmdStamped)
-        self.pub_wheels_cmd_topic = '~wheels_cmd'
-        # TODO: maybe the following topics work better
-        # self.pub_wheels_cmd_topic = '/'+self.veh_name+'/wheels_driver_node/wheels_cmd'
-        # self.pub_wheels_cmd_topic = '/'+self.veh_name+'/wheels_driver/wheels_cmd'
-        self.pub_wheels_cmd = rospy.Publisher(self.pub_wheels_cmd_topic, WheelsCmdStamped, queue_size=10)
+        self.pub_wheels_cmd_topic = '/'+self.veh_name+'/wheels_driver_node/wheels_cmd'
+        rospy.loginfo("publishing wheels commands to topic: "+self.pub_wheels_cmd_topic)
+
+        self.pub_wheels_cmd = rospy.Publisher(self.pub_wheels_cmd_topic, WheelsCmdStamped, queue_size=1)
+
+        # publisher for currently processed image
+        self.pub_image_topic = '/' + self.veh_name + '/braitenberg_node/image/compressed'
+        self.pub_image = rospy.Publisher(self.pub_image_topic, CompressedImage, queue_size=10)
 
         self.log("Initialized")
 
@@ -114,8 +119,14 @@ class BraitenbergNode(DTROS):
 
             u_l_limited, u_r_limited = self.control(observation_left, observation_middle, observation_right)
 
+            rospy.loginfo("u_l_limited: "+str(u_l_limited))
+            rospy.loginfo("u_r_limited: "+str(u_r_limited))
+
 
             self.publish_wheels_cmd_msg(u_l_limited, u_r_limited)
+
+            self.pub_image.publish(img_msg)
+
         except CvBridgeError as e:
             print(e)
 
@@ -157,14 +168,15 @@ class BraitenbergNode(DTROS):
             right_green = right_img[:,:,1].sum()
             right_red = right_img[:,:,2].sum()
 
-            observation_left = (left_green-left_red)/avg_spectral_intensity_third
-            observation_middle = (middle_green-middle_red)/avg_spectral_intensity_third
-            observation_right = (right_green-right_red)/avg_spectral_intensity_third
+            observation_left = (left_green-left_red)/float(avg_spectral_intensity_third)
+            observation_middle = (middle_green-middle_red)/float(avg_spectral_intensity_third)
+            observation_right = (right_green-right_red)/float(avg_spectral_intensity_third)
 
         else:
-            print("unknown observation mode: "+str(self.mode))
-            observation_left = 0
-            observation_right = 0
+            rospy.loginfo("unknown observation mode: "+str(self.mode))
+            observation_left = 0.0
+            observation_middle = 0.0
+            observation_right = 0.0
 
         return observation_left, observation_middle, observation_right
 
@@ -189,22 +201,35 @@ class BraitenbergNode(DTROS):
 
     def control(self, observation_left, observation_middle, observation_right):
         # observations can be integrated brightness or amount of detected color
-        # observations_left describe features which lead the robot to turn left
-        # observations_left describe features which lead the robot to turn right
+        # observations_left describes features which lead the robot to turn left
+        # observations_middle describes features which lead the robot to stay straight
+        # observations_right describes features which lead the robot to turn right
 
         observation_delta = observation_left-observation_right
         observation_sum = observation_left+observation_middle+observation_right
         observation_delta_normalized = observation_delta/observation_sum
         observation_middle_normalized = observation_middle/observation_sum
 
-        # option 1
-        speed_l = (observation_middle + observation_left)/observation_sum
-        speed_r = (observation_middle + observation_right)/observation_sum
+        rospy.loginfo("observation_delta: "+str(observation_delta))
+        rospy.loginfo("observation_delta_normalized: "+str(observation_delta_normalized))
+        rospy.loginfo("observation_middle_normalized: "+str(observation_middle_normalized))
 
-        # option 2
-        # speed_l = self.kp_middle*observation_middle_normalized + self.kp_delta*observation_delta_normalized
-        # speed_r = self.kp_middle*observation_middle_normalized - self.kp_delta*observation_delta_normalized
+        if self.mode == 'attracting':
+            # option 1
+            # speed_l = (observation_middle + observation_left)/observation_sum
+            # speed_r = (observation_middle + observation_right)/observation_sum
 
+            # option 2
+            speed_middle = 0.2+self.kp_middle*max(0,(1/3.0-observation_middle_normalized))
+            speed_l = speed_middle - self.kp_delta*observation_delta_normalized
+            speed_r = speed_middle + self.kp_delta*observation_delta_normalized
+        elif self.mode == 'avoiding':
+            speed_middle = 0.2+self.kp_middle*max(0,(1/3.0-observation_middle_normalized))
+            speed_l = speed_middle + self.kp_delta*observation_delta_normalized
+            speed_r = speed_middle - self.kp_delta*observation_delta_normalized
+
+
+        rospy.loginfo("speed_middle: "+str(speed_middle))
         rospy.loginfo("speed_l: "+str(speed_l))
         rospy.loginfo("speed_r: "+str(speed_r))
 
@@ -215,7 +240,7 @@ class BraitenbergNode(DTROS):
         message.vel_left = u_l_limited
         message.vel_right = u_r_limited
         self.pub_wheels_cmd.publish(message)
-        print("published wheels_cmd message")
+        rospy.loginfo("published wheels_cmd message")
 
     def speedToCmd(self, speed_l, speed_r):
         """Applies the robot-specific gain and trim to the
@@ -238,8 +263,8 @@ class BraitenbergNode(DTROS):
         """
 
         # assuming same motor constants k for both motors
-        k_r = self.parameters['~k']
-        k_l = self.parameters['~k']
+        k = self.parameters['~k']
+        k_l = k_r = k
 
         # adjusting k by gain and trim
         k_r_inv = (self.parameters['~gain'] + self.parameters['~trim']) \
