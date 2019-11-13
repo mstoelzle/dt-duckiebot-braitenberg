@@ -6,6 +6,8 @@ import os
 import rospy
 import yaml
 
+from cv_bridge import CvBridge, CvBridgeError
+
 from duckietown import DTROS
 from sensor_msgs.msg import CompressedImage
 from duckietown_msgs.msg import WheelsCmdStamped
@@ -98,11 +100,10 @@ class BraitenbergNode(DTROS):
     def run(self):
         pass
 
-    def callback_image(self, data):
-        print("I received an image message")
+    def callback_image(self, img_msg):
         rospy.loginfo("I received an image message")
         try:
-            raw_img = self.bridge.compressed_imgmsg_to_cv2(data)
+            raw_img = self.bridge.compressed_imgmsg_to_cv2(img_msg)
 
             observation_left, observation_middle, observation_right = self.process_image(raw_img)
 
