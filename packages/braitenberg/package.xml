@@ -1,0 +1,11 @@
+<package>
+    <name>braitenberg</name>
+    <version>0.1.0</version>
+    <description>
+        This package is for exercise AMoD CRA1
+    </description>
+    <maintainer email="maximilian@stoelzle.ch">Maximilian Stoelzle</maintainer>
+    <license>None</license>
+
+    <buildtool_depend>catkin</buildtool_depend>
+</package>
