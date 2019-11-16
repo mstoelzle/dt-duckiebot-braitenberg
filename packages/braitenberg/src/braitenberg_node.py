@@ -84,6 +84,12 @@ class BraitenbergNode(DTROS):
         rospy.sleep(2.0)
         rospy.set_param('/'+self.veh_name+'/camera_node/exposure_mode', 'off')
 
+        # reduce size and framerate of image to reduce latency
+        rospy.set_param('/'+self.veh_name+'/camera_node/res_w', 320)
+        rospy.set_param('/'+self.veh_name+'/camera_node/res_h', 240)
+        rospy.set_param('/'+self.veh_name+'/camera_node/framerate', 10.0)
+
+
         self.bridge = CvBridge()
 
         # subscribe to camera stream
