@@ -6,7 +6,7 @@
 `dts devel build -f --arch arm32v7 -H maxicar.local`
 
 ## Run:
-`docker -H maxicar.local run -it --rm --privileged -v /data:/data -e MODE=avoiding --net host duckietown/dt-duckiebot-braitenberg:v1-arm32v7`
+`docker -H maxicar.local run -it --rm --privileged -v /data:/data -e MODE=avoid --net host duckietown/dt-duckiebot-braitenberg:v1-arm32v7`
 
 ### Access ROS-enabled container
 `docker -H maxicar.local run -it --rm --net host duckietown/dt-ros-commons:daffy-arm32v7 /bin/bash`

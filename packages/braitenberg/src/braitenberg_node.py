@@ -58,8 +58,8 @@ class BraitenbergNode(DTROS):
         self.veh_name = rospy.get_namespace().strip("/")
 
         # mode of braitenberg, options are:
-        # "avoiding": avoiding brightness
-        # "attracting": attracted by brightness
+        # "avoid": avoid brightness
+        # "attract": attracted by brightness
         # "combined": attracted by green, repelled by red
         self.mode = rospy.get_param("/mode")
 
@@ -76,8 +76,13 @@ class BraitenbergNode(DTROS):
         self.updateParameters()
 
         # control gains
-        self.kp_delta = 0.5
-        self.kp_middle = 8
+        # self.kp_delta = 0.5
+        # self.kp_middle = 8
+        self.k_norm = 100/3
+        self.k_straight = 0.15
+        self.k_same = 0.02
+        self.k_opposite = 0.28
+
 
         # Wait for the automatic gain control
         # of the camera to settle, before we stop it
@@ -154,7 +159,7 @@ class BraitenbergNode(DTROS):
         w = raw_img.shape[1]
         print(avg_spectral_intensity/h/w)
 
-        if self.mode == 'attracting' or self.mode == 'avoiding':
+        if self.mode == 'attract' or self.mode == 'avoid':
             gray_img = cv2.cvtColor(raw_img, cv2.COLOR_BGR2GRAY)
             left_img = self.get_img_sector(gray_img, 'left')
             middle_img = self.get_img_sector(gray_img, 'middle')
@@ -162,6 +167,10 @@ class BraitenbergNode(DTROS):
             observation_left = float(left_img.sum())
             observation_middle = float(middle_img.sum())
             observation_right = float(right_img.sum())
+            if self.mode == 'attract':
+                observation_left = (-1)*observation_left
+                observation_middle = (-1)*observation_middle
+                observation_right = (-1)*observation_right
         elif self.mode == 'combined':
             left_img = self.get_img_sector(raw_img, 'left')
             middle_img = self.get_img_sector(raw_img, 'middle')
@@ -174,9 +183,13 @@ class BraitenbergNode(DTROS):
             right_green = right_img[:,:,1].sum()
             right_red = right_img[:,:,2].sum()
 
-            observation_left = (left_green-left_red)/float(avg_spectral_intensity_third)
-            observation_middle = (middle_green-middle_red)/float(avg_spectral_intensity_third)
-            observation_right = (right_green-right_red)/float(avg_spectral_intensity_third)
+            observation_left = left_red - left_green
+            observation_middle = middle_red - middle_green
+            observation_right = right_red - right_green
+
+            # observation_left = (left_green-left_red)/float(avg_spectral_intensity_third)
+            # observation_middle = (middle_green-middle_red)/float(avg_spectral_intensity_third)
+            # observation_right = (right_green-right_red)/float(avg_spectral_intensity_third)
 
         else:
             rospy.loginfo("unknown observation mode: "+str(self.mode))
@@ -206,36 +219,55 @@ class BraitenbergNode(DTROS):
 
 
     def control(self, observation_left, observation_middle, observation_right):
+
+        # old implementation
         # observations can be integrated brightness or amount of detected color
         # observations_left describes features which lead the robot to turn left
         # observations_middle describes features which lead the robot to stay straight
         # observations_right describes features which lead the robot to turn right
 
-        observation_delta = observation_left-observation_right
-        observation_sum = observation_left+observation_middle+observation_right
-        observation_delta_normalized = observation_delta/observation_sum
-        observation_middle_normalized = observation_middle/observation_sum
+        # observation_delta = observation_left-observation_right
+        # observation_sum = observation_left+observation_middle+observation_right
+        # observation_delta_normalized = observation_delta/observation_sum
+        # observation_middle_normalized = observation_middle/observation_sum
+        #
+        # rospy.loginfo("observation_delta: "+str(observation_delta))
+        # rospy.loginfo("observation_delta_normalized: "+str(observation_delta_normalized))
+        # rospy.loginfo("observation_middle_normalized: "+str(observation_middle_normalized))
+        #
+        # if self.mode == 'attract':
+        #     # option 1
+        #     # speed_l = (observation_middle + observation_left)/observation_sum
+        #     # speed_r = (observation_middle + observation_right)/observation_sum
+        #
+        #     # option 2
+        #     speed_middle = 0.2+self.kp_middle*max(0,(1/3.0-observation_middle_normalized))
+        #     speed_l = speed_middle - self.kp_delta*observation_delta_normalized
+        #     speed_r = speed_middle + self.kp_delta*observation_delta_normalized
+        # elif self.mode == 'avoid':
+        #     speed_middle = 0.2+self.kp_middle*max(0,(1/3.0-observation_middle_normalized))
+        #     speed_l = speed_middle + self.kp_delta*observation_delta_normalized
+        #     speed_r = speed_middle - self.kp_delta*observation_delta_normalized
+        #
+        #
+        # rospy.loginfo("speed_middle: "+str(speed_middle))
 
-        rospy.loginfo("observation_delta: "+str(observation_delta))
-        rospy.loginfo("observation_delta_normalized: "+str(observation_delta_normalized))
-        rospy.loginfo("observation_middle_normalized: "+str(observation_middle_normalized))
+        intensity_comp = [observation_left, observation_middle, observation_right]
+        min_region = intensity_comp.index(min(intensity_comp))
 
-        if self.mode == 'attracting':
-            # option 1
-            # speed_l = (observation_middle + observation_left)/observation_sum
-            # speed_r = (observation_middle + observation_right)/observation_sum
+        if min_region == 0:
+            rospy.loginfo("min region: left")
+            speed_l = self.k_same*self.k_norm
+            speed_r = self.k_opposite*self.k_norm
+        elif min_region == 1:
+            rospy.loginfo("min region: middle")
+            speed_l = self.k_straight*self.k_norm
+            speed_r = self.k_straight*self.k_norm
+        else:
+            rospy.loginfo("min region: right")
+            speed_l = self.k_opposite*self.k_norm
+            speed_r = self.k_same*self.k_norm
 
-            # option 2
-            speed_middle = 0.2+self.kp_middle*max(0,(1/3.0-observation_middle_normalized))
-            speed_l = speed_middle - self.kp_delta*observation_delta_normalized
-            speed_r = speed_middle + self.kp_delta*observation_delta_normalized
-        elif self.mode == 'avoiding':
-            speed_middle = 0.2+self.kp_middle*max(0,(1/3.0-observation_middle_normalized))
-            speed_l = speed_middle + self.kp_delta*observation_delta_normalized
-            speed_r = speed_middle - self.kp_delta*observation_delta_normalized
-
-
-        rospy.loginfo("speed_middle: "+str(speed_middle))
         rospy.loginfo("speed_l: "+str(speed_l))
         rospy.loginfo("speed_r: "+str(speed_r))
 
